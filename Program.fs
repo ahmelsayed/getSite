@@ -15,12 +15,15 @@ let defaultResourceGroupName = "testSiteResourceGroup"
 let defaultSubscription = "2d41f884-3a5d-4b75-809c-7495edb04a0f"
 let websitesApiVersion = "2015-02-01"
 let resourceGroupApiVersion = "2014-04-01"
+let defaultServerFarm = "/subscriptions/2d41f884-3a5d-4b75-809c-7495edb04a0f/resourceGroups/Default-Web-WestUS/providers/Microsoft.Web/serverfarms/Medium"
 let resourceGroupCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}?api-version={2}"
 let sitesCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/sites?api-version={2}"
 let siteCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/sites/{2}?api-version={3}"
 let sitePublishCredsCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/sites/{2}/config/publishingcredentials/list?api-version={3}"
 
-type CsmMessage = { name: string; location: string; properties: obj }
+type CsmMessage = { name: string; location: string; }
+type SitePropertiesMessage = { serverFarmId: string }
+type SiteMessage = { location: string; properties: SitePropertiesMessage }
 type CsmMessageArray = { value: CsmMessage array }
 type PublishingCredentialsProperties = { scmUri: string }
 type PublishingCredential = { properties: PublishingCredentialsProperties }
@@ -69,7 +72,7 @@ let getContent (r: HttpResponseMessage) =
     |> Async.RunSynchronously
 
 let createResourceGroup() =
-    armClient.HttpInvoke (HttpMethod.Put, String.Format(resourceGroupCsmTemplate, defaultSubscription, defaultResourceGroupName, resourceGroupApiVersion) |> Uri, { name = defaultResourceGroupName; location = "west us"; properties = obj })
+    armClient.HttpInvoke (HttpMethod.Put, String.Format(resourceGroupCsmTemplate, defaultSubscription, defaultResourceGroupName, resourceGroupApiVersion) |> Uri, { name = defaultResourceGroupName; location = "west us"; })
     |> Async.AwaitTask
     |> Async.RunSynchronously
     |> handleFailure
@@ -78,7 +81,7 @@ let createResourceGroup() =
 let createSite () = 
     createResourceGroup()
     let siteName = siteNameGenerator()
-    armClient.HttpInvoke (HttpMethod.Put, String.Format(siteCsmTemplate, defaultSubscription, defaultResourceGroupName, siteName, websitesApiVersion) |> Uri, { name = siteName; location = "west us"; properties = obj })
+    armClient.HttpInvoke (HttpMethod.Put, String.Format(siteCsmTemplate, defaultSubscription, defaultResourceGroupName, siteName, websitesApiVersion) |> Uri, { location = "west us"; properties = { serverFarmId = defaultServerFarm } })
     |> Async.AwaitTask
     |> Async.RunSynchronously
     |> handleFailure
