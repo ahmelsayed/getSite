@@ -12,10 +12,10 @@ type Mode =
     | List
 
 let defaultResourceGroupName = "testSiteResourceGroup"
-let defaultSubscription = "2d41f884-3a5d-4b75-809c-7495edb04a0f"
+let defaultSubscription = ""
 let websitesApiVersion = "2015-02-01"
 let resourceGroupApiVersion = "2014-04-01"
-let defaultServerFarm = "/subscriptions/2d41f884-3a5d-4b75-809c-7495edb04a0f/resourceGroups/Default-Web-WestUS/providers/Microsoft.Web/serverfarms/Medium"
+let defaultServerFarm = ""
 let resourceGroupCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}?api-version={2}"
 let sitesCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/sites?api-version={2}"
 let siteCsmTemplate = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/sites/{2}?api-version={3}"
@@ -66,40 +66,42 @@ let handleFailure (r: HttpResponseMessage) =
     | false -> printfn "%s" (r.Content.ReadAsStringAsync () |> Async.AwaitTask |> Async.RunSynchronously)
                r.EnsureSuccessStatusCode()
 
-let getContent (r: HttpResponseMessage) =
-    r.Content.ReadAsStringAsync ()
+let awaitTask t =
+    t
     |> Async.AwaitTask
     |> Async.RunSynchronously
 
+let getContent (r: HttpResponseMessage) =
+    r.Content.ReadAsStringAsync ()
+    |> awaitTask
+
 let createResourceGroup() =
     armClient.HttpInvoke (HttpMethod.Put, String.Format(resourceGroupCsmTemplate, defaultSubscription, defaultResourceGroupName, resourceGroupApiVersion) |> Uri, { name = defaultResourceGroupName; location = "west us"; })
-    |> Async.AwaitTask
-    |> Async.RunSynchronously
+    |> awaitTask
     |> handleFailure
     |> ignore
+
+let getScmUri siteName =
+    armClient.HttpInvoke (HttpMethod.Post, String.Format(sitePublishCredsCsmTemplate, defaultSubscription, defaultResourceGroupName, siteName, websitesApiVersion) |> Uri)
+    |> awaitTask
+    |> (fun r -> r.EnsureSuccessStatusCode())
+    |> getContent
+    |> (fun v -> JsonConvert.DeserializeObject<PublishingCredential>(v))
+    |> (fun p -> p.properties.scmUri)
 
 let createSite () = 
     createResourceGroup()
     let siteName = siteNameGenerator()
     armClient.HttpInvoke (HttpMethod.Put, String.Format(siteCsmTemplate, defaultSubscription, defaultResourceGroupName, siteName, websitesApiVersion) |> Uri, { location = "west us"; properties = { serverFarmId = defaultServerFarm } })
-    |> Async.AwaitTask
-    |> Async.RunSynchronously
+    |> awaitTask
     |> handleFailure
     |> ignore
 
-    let scmUri = armClient.HttpInvoke (HttpMethod.Post, String.Format(sitePublishCredsCsmTemplate, defaultSubscription, defaultResourceGroupName, siteName, websitesApiVersion) |> Uri)
-                  |> Async.AwaitTask
-                  |> Async.RunSynchronously
-                  |> (fun r -> r.EnsureSuccessStatusCode())
-                  |> getContent
-                  |> (fun v -> JsonConvert.DeserializeObject<PublishingCredential>(v))
-                  |> (fun p -> p.properties.scmUri)
-    printfn "%s" scmUri
+    printfn "%s: %s" siteName (getScmUri siteName)
 
 let getAllSites () =
     armClient.HttpInvoke (HttpMethod.Get, String.Format(sitesCsmTemplate, defaultSubscription, defaultResourceGroupName, websitesApiVersion) |> Uri)
-    |> Async.AwaitTask
-    |> Async.RunSynchronously
+    |> awaitTask
     |> getContent
     |> (fun c -> JsonConvert.DeserializeObject<CsmMessageArray>(c))
     |> (fun a -> a.value)
@@ -115,7 +117,7 @@ let deleteSites () =
 
 let listSites () =
     getAllSites ()
-    |> Array.iter (fun s -> printfn "%s" s.name)
+    |> Array.iter (fun s -> printfn "%s: %s" s.name (getScmUri s.name))
 
 let run () =
     match getMode with
